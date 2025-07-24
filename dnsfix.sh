@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# DNS-aware Minecraft Server Fix
+# Final DNS and Minecraft Server Fix
 # Author: Enterprise Systems Engineer
-# Created: 2025-07-24 16:59:30 UTC
+# Created: 2025-07-24 17:04:52
 # For: ItzKr1sh
 
 # Set strict error handling
@@ -24,123 +24,105 @@ print_error() { echo -e "${RED}[✗]${NC} $1"; }
 # Version and directories
 MINECRAFT_VERSION="1.21.44.01"
 MINECRAFT_DIR="$HOME/server-data/minecraft"
-TEMP_DIR="/tmp/mcserver-$$"
 
-# Create working directories
-mkdir -p "$MINECRAFT_DIR" "$TEMP_DIR"
-cd "$TEMP_DIR"
+print_info "Starting final DNS and Minecraft server fix..."
 
-print_info "Starting DNS-aware Minecraft server fix..."
+# Create minecraft directory
+mkdir -p "$MINECRAFT_DIR"
+cd "$MINECRAFT_DIR"
 
-# Test internet connectivity with multiple DNS servers
-test_dns() {
-    local test_domain="$1"
-    local dns_server="$2"
-    if dig @"$dns_server" "$test_domain" +short +timeout=2 &>/dev/null; then
-        return 0
+# Manual DNS configuration
+print_info "Configuring DNS manually..."
+
+# Backup existing resolv.conf
+if [ -f "/etc/resolv.conf" ]; then
+    sudo cp /etc/resolv.conf /etc/resolv.conf.backup
+fi
+
+# Create new resolv.conf content
+print_info "Setting up DNS servers..."
+echo "nameserver 8.8.8.8
+nameserver 1.1.1.1
+nameserver 8.8.4.4
+options timeout:2 attempts:3" | sudo tee /etc/resolv.conf > /dev/null
+
+# Make resolv.conf immutable to prevent system from changing it
+sudo chattr +i /etc/resolv.conf
+
+# Function to restore DNS settings on exit
+cleanup() {
+    print_info "Restoring DNS settings..."
+    sudo chattr -i /etc/resolv.conf
+    if [ -f "/etc/resolv.conf.backup" ]; then
+        sudo mv /etc/resolv.conf.backup /etc/resolv.conf
     fi
-    return 1
 }
+trap cleanup EXIT
 
-# Function to download with specific DNS
+# Install necessary packages without resolvconf
+print_info "Installing required packages..."
+sudo apt-get update -qq
+sudo apt-get install -y --no-install-recommends curl wget dnsutils
+
+# Function to try download with specific DNS server
 download_with_dns() {
     local url="$1"
     local output="$2"
-    local dns="$3"
-    
-    print_info "Trying download with DNS $dns..."
-    curl --dns-servers "$dns" --connect-timeout 10 -L -o "$output" "$url" 2>/dev/null || return 1
+    print_info "Attempting download: $url"
+    curl --connect-timeout 10 -L -o "$output" "$url" 2>/dev/null || return 1
 }
 
-# Function to verify downloaded file
-verify_file() {
-    local file="$1"
-    if [[ -f "$file" ]] && [[ $(stat -c%s "$file") -gt 1000000 ]]; then
-        return 0
-    fi
-    return 1
-}
+# Docker installation (if needed)
+if ! command -v docker &>/dev/null; then
+    print_info "Installing Docker..."
+    curl -fsSL https://get.docker.com | sudo sh
+    sudo usermod -aG docker "$USER"
+    sudo systemctl restart docker
+    print_warning "Docker installed. You'll need to log out and back in later."
+fi
 
-# Install required packages
-print_info "Installing required packages..."
-sudo apt-get update -qq
-sudo apt-get install -y curl wget dnsutils resolvconf
-
-# Configure multiple DNS resolvers
-print_info "Configuring DNS resolvers..."
-sudo tee /etc/resolvconf/resolv.conf.d/head > /dev/null << EOF
-nameserver 8.8.8.8
-nameserver 1.1.1.1
-nameserver 8.8.4.4
-nameserver 9.9.9.9
-EOF
-
-sudo resolvconf -u
-
-# Alternative download URLs
+# Try downloading server files
 DOWNLOAD_URLS=(
     "https://minecraft.azureedge.net/bin-linux/bedrock-server-${MINECRAFT_VERSION}.zip"
     "https://download.minecraft.net/bin-linux/bedrock-server-${MINECRAFT_VERSION}.zip"
-    "https://minecraft.net/download/server/bedrock-${MINECRAFT_VERSION}.zip"
 )
 
-# DNS servers to try
-DNS_SERVERS=(
-    "8.8.8.8"
-    "1.1.1.1"
-    "8.8.4.4"
-    "9.9.9.9"
-)
-
-# Try downloading with different DNS servers
 success=false
 for url in "${DOWNLOAD_URLS[@]}"; do
-    for dns in "${DNS_SERVERS[@]}"; do
-        print_info "Attempting download from $url using DNS $dns..."
-        if download_with_dns "$url" "bedrock-server.zip" "$dns"; then
-            if verify_file "bedrock-server.zip"; then
-                success=true
-                break 2
-            fi
+    if download_with_dns "$url" "bedrock-server.zip"; then
+        if [ -f "bedrock-server.zip" ] && [ $(stat -c%s "bedrock-server.zip") -gt 1000000 ]; then
+            success=true
+            break
         fi
-    done
+    fi
 done
 
-# If direct download failed, try Docker method
+# If direct download failed, use Docker method
 if ! $success; then
-    print_warning "Direct downloads failed. Attempting Docker method..."
+    print_warning "Direct downloads failed. Using Docker method..."
+    print_info "Pulling Minecraft server image..."
     
-    # Ensure Docker is installed and user has permissions
-    if ! command -v docker &>/dev/null; then
-        print_info "Installing Docker..."
-        curl -fsSL https://get.docker.com | sudo sh
-        sudo usermod -aG docker "$USER"
-        sudo systemctl restart docker
-        print_warning "Docker installed. You'll need to log out and back in for group changes to take effect."
-        print_info "For now, we'll use sudo for Docker commands."
+    if groups | grep -q docker; then
+        docker pull itzg/minecraft-bedrock-server:latest
+        docker create --name mc-temp itzg/minecraft-bedrock-server:latest
+        docker cp mc-temp:/bedrock/. .
+        docker rm mc-temp
+    else
+        sudo docker pull itzg/minecraft-bedrock-server:latest
+        sudo docker create --name mc-temp itzg/minecraft-bedrock-server:latest
+        sudo docker cp mc-temp:/bedrock/. .
+        sudo docker rm mc-temp
     fi
     
-    print_info "Pulling Minecraft server image..."
-    sudo docker pull itzg/minecraft-bedrock-server:latest
-    
-    print_info "Extracting server files..."
-    sudo docker create --name mc-temp itzg/minecraft-bedrock-server:latest
-    sudo docker cp mc-temp:/bedrock/. "$MINECRAFT_DIR/"
-    sudo docker rm mc-temp
-    
-    if [ -f "$MINECRAFT_DIR/bedrock_server" ]; then
+    if [ -f "bedrock_server" ]; then
         success=true
     fi
 fi
 
 if $success; then
-    # Move files if they're in temp dir
-    if [ -f "bedrock-server.zip" ]; then
-        unzip -o bedrock-server.zip -d "$MINECRAFT_DIR"
-    fi
-    
-    cd "$MINECRAFT_DIR"
-    chmod +x bedrock_server
+    # Ensure correct permissions
+    sudo chown -R $USER:$USER .
+    chmod +x bedrock_server 2>/dev/null || true
     
     # Create server configuration
     cat > server.properties << 'EOF'
@@ -184,7 +166,7 @@ services:
     restart: unless-stopped
 EOF
 
-    # Create convenience script
+    # Create start script
     cat > start-server.sh << 'EOF'
 #!/bin/bash
 if ! groups | grep -q docker; then
@@ -197,18 +179,16 @@ echo "Server starting! Connect using port 19132"
 EOF
     chmod +x start-server.sh
     
-    print_status "Server files and configuration ready!"
-    print_info "To start the server:"
-    echo "1. If this is your first time, log out and log back in"
-    echo "2. cd $MINECRAFT_DIR"
-    echo "3. ./start-server.sh"
+    print_status "Server setup completed successfully!"
+    echo
+    echo "Next steps:"
+    echo "1. Log out and log back in to apply Docker permissions"
+    echo "2. Run: cd $MINECRAFT_DIR"
+    echo "3. Run: ./start-server.sh"
     
-    # Clean up
-    rm -rf "$TEMP_DIR"
 else
-    print_error "All download methods failed."
-    print_info "Please check your internet connection and try again."
+    print_error "Server setup failed. Please check your internet connection and try again."
     exit 1
 fi
 
-print_status "Fix completed successfully!"
+print_status "Fix completed! Please log out and log back in to use Docker without sudo."
