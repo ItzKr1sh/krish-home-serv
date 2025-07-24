@@ -72,9 +72,9 @@ print_info() {
 
 print_header() {
     local title="$1"
-    echo -e "\n${COLORS[PURPLE]}${'='*70}${COLORS[NC]}"
+    echo -e "\n${COLORS[PURPLE]}$(printf '=%.0s' {1..70})${COLORS[NC]}"
     echo -e "${COLORS[PURPLE]}$(printf "%*s" $(((70+${#title})/2)) "$title")${COLORS[NC]}"
-    echo -e "${COLORS[PURPLE]}${'='*70}${COLORS[NC]}\n"
+    echo -e "${COLORS[PURPLE]}$(printf '=%.0s' {1..70})${COLORS[NC]}\n"
 }
 
 show_banner() {
@@ -867,4 +867,130 @@ show_final_status() {
     
     echo -e "${COLORS[GREEN]}🎉 KRISH HOME SERVER v2.0 IS NOW LIVE! 🎉${COLORS[NC]}\n"
     
-    echo -e "${COLORS
+    echo -e "${COLORS[CYAN]}📋 SERVICE ACCESS INFORMATION:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Nextcloud:${COLORS[NC]} http://localhost:8080 or http://$tailscale_ip:8080"
+    echo -e "  ${COLORS[WHITE]}• Portainer:${COLORS[NC]} http://localhost:9000 or http://$tailscale_ip:9000"
+    echo -e "  ${COLORS[WHITE]}• Grafana:${COLORS[NC]} http://localhost:3000 or http://$tailscale_ip:3000"
+    echo -e "  ${COLORS[WHITE]}• Prometheus:${COLORS[NC]} http://localhost:9090 or http://$tailscale_ip:9090"
+    echo -e "  ${COLORS[WHITE]}• Minecraft Server:${COLORS[NC]} $tailscale_ip:19132 (Bedrock Edition)"
+    echo -e "  ${COLORS[WHITE]}• Samba Shares:${COLORS[NC]} \\\\$tailscale_ip\\Public and \\\\$tailscale_ip\\Private"
+    
+    echo -e "\n${COLORS[YELLOW]}🔑 CREDENTIALS:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Nextcloud:${COLORS[NC]} Check $CONFIG_DIR/nextcloud_credentials.txt"
+    echo -e "  ${COLORS[WHITE]}• Grafana:${COLORS[NC]} admin / admin123"
+    echo -e "  ${COLORS[WHITE]}• Samba:${COLORS[NC]} Your system username with the password you set"
+    
+    echo -e "\n${COLORS[BLUE]}📁 IMPORTANT DIRECTORIES:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Server Data:${COLORS[NC]} $HOME/server-data/"
+    echo -e "  ${COLORS[WHITE]}• Backups:${COLORS[NC]} $HOME/server-data/backups/"
+    echo -e "  ${COLORS[WHITE]}• Logs:${COLORS[NC]} $HOME/server-data/logs/"
+    echo -e "  ${COLORS[WHITE]}• Config:${COLORS[NC]} $CONFIG_DIR/"
+    
+    echo -e "\n${COLORS[PURPLE]}🛠️  MANAGEMENT COMMANDS:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Health Check:${COLORS[NC]} $HOME/krish-health-check.sh"
+    echo -e "  ${COLORS[WHITE]}• Manual Backup:${COLORS[NC]} $HOME/krish-backup.sh"
+    echo -e "  ${COLORS[WHITE]}• View Logs:${COLORS[NC]} tail -f $LOG_FILE"
+    echo -e "  ${COLORS[WHITE]}• Docker Status:${COLORS[NC]} docker ps"
+    echo -e "  ${COLORS[WHITE]}• Tailscale Status:${COLORS[NC]} tailscale status"
+    
+    echo -e "\n${COLORS[GREEN]}✅ AUTOMATED FEATURES:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Daily Backups:${COLORS[NC]} 2:00 AM (Retention: $BACKUP_RETENTION_DAYS days)"
+    echo -e "  ${COLORS[WHITE]}• Health Monitoring:${COLORS[NC]} Every hour"
+    echo -e "  ${COLORS[WHITE]}• Security:${COLORS[NC]} UFW Firewall + Fail2Ban active"
+    echo -e "  ${COLORS[WHITE]}• VPN Access:${COLORS[NC]} Tailscale mesh network"
+    
+    echo -e "\n${COLORS[RED]}⚠️  SECURITY REMINDERS:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Change default passwords immediately${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Review firewall rules: sudo ufw status${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Monitor fail2ban: sudo fail2ban-client status${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Keep system updated: sudo apt update && sudo apt upgrade${COLORS[NC]}"
+    
+    echo -e "\n${COLORS[CYAN]}📞 SUPPORT & MAINTENANCE:${COLORS[NC]}"
+    echo -e "  ${COLORS[WHITE]}• Documentation:${COLORS[NC]} Check $CONFIG_DIR/ for service configs"
+    echo -e "  ${COLORS[WHITE]}• Troubleshooting:${COLORS[NC]} Check logs in $HOME/server-data/logs/"
+    echo -e "  ${COLORS[WHITE]}• Updates:${COLORS[NC]} Re-run this script for updates"
+    
+    echo -e "\n${COLORS[BOLD]}${COLORS[GREEN]}🚀 Your enterprise-grade home server is ready!${COLORS[NC]}"
+    echo -e "${COLORS[BOLD]}${COLORS[WHITE]}Access your services and enjoy your private cloud infrastructure!${COLORS[NC]}\n"
+    
+    # Save final status to file
+    cat > "$CONFIG_DIR/deployment_summary.txt" << EOF
+Krish Home Server v2.0 - Deployment Summary
+===========================================
+Deployment Date: $(date)
+Tailscale IP: $tailscale_ip
+
+Services Deployed:
+- Nextcloud (Port 8080)
+- Minecraft Bedrock Server (Port 19132/19133)
+- Samba File Server (SMB)
+- Portainer (Port 9000)
+- Grafana (Port 3000)
+- Prometheus (Port 9090)
+- Tailscale VPN
+- Automated Backups
+- Security Hardening
+
+Important Files:
+- Nextcloud Credentials: $CONFIG_DIR/nextcloud_credentials.txt
+- Main Log: $LOG_FILE
+- Health Check: $HOME/krish-health-check.sh
+- Backup Script: $HOME/krish-backup.sh
+
+For support and troubleshooting, check the logs directory:
+$HOME/server-data/logs/
+EOF
+    
+    print_status "Deployment summary saved to $CONFIG_DIR/deployment_summary.txt"
+}
+
+# =============================================================================
+# MAIN EXECUTION FLOW
+# =============================================================================
+
+main() {
+    # Initialize
+    show_banner
+    setup_logging
+    
+    # Pre-flight checks
+    print_header "SYSTEM VALIDATION"
+    check_root
+    check_sudo
+    check_os
+    check_resources
+    check_network
+    
+    # System preparation
+    print_header "SYSTEM PREPARATION"
+    update_system
+    install_essentials
+    setup_directories
+    install_docker
+    
+    # Core services deployment
+    setup_tailscale
+    setup_minecraft
+    setup_nextcloud
+    setup_samba
+    setup_monitoring
+    
+    # Security and maintenance
+    setup_security
+    setup_backup_system
+    create_health_check
+    
+    # Final status and instructions
+    show_final_status
+    
+    # Logout and login prompt for docker group
+    print_warning "Please log out and log back in for Docker group permissions to take effect!"
+    print_info "Or run: newgrp docker"
+    
+    log "Krish Home Server v2.0 deployment completed successfully!"
+}
+
+# Execute main function if script is run directly
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    main "$@"
+fi
